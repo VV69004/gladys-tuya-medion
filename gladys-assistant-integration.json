@@ -1,0 +1,231 @@
+{
+  "manifest_version": 1,
+  "type": "device",
+  "name": "Tuya (patch MEDION P502)",
+  "description": {
+    "en": "Personal fork of the Tuya integration with a local fix for the MEDION P502 AC temperature scale bug.",
+    "fr": "Fork Tuya avec correctif de l'échelle de température pour la clim MEDION P502."
+  },
+  "version": "1.12.0-medion-fix",
+  "docker_image": "ghcr.io/vv69004/gladys-tuya-medion:1.12.0",
+  "gladys_version": ">=4.62.0",
+  "cover_image": "https://raw.githubusercontent.com/Terdious/gladys-tuya/master/cover.png",
+  "network_discovery": [
+    {
+      "type": "udp-broadcast",
+      "ports": [
+        6666,
+        6667,
+        7000
+      ]
+    }
+  ],
+  "transports": [
+    "local",
+    "cloud"
+  ],
+  "actions": [
+    {
+      "key": "detect_protocol",
+      "label": {
+        "en": "Detect local protocol (manual IP)",
+        "fr": "Détecter le protocole local (IP manuelle)"
+      },
+      "description": {
+        "en": "For a device the LAN scan did not find: enter its IP to detect the local protocol version and enable local mode.",
+        "fr": "Pour un appareil non trouvé par le scan LAN : saisissez son IP pour détecter la version de protocole locale et activer le mode local."
+      },
+      "timeout_seconds": 60,
+      "fields": [
+        {
+          "key": "device",
+          "type": "string",
+          "label": {
+            "en": "Device (name or Tuya ID)",
+            "fr": "Appareil (nom ou identifiant Tuya)"
+          },
+          "description": {
+            "en": "The device name as shown in Gladys, or its Tuya ID.",
+            "fr": "Le nom de l'appareil tel qu'affiché dans Gladys, ou son identifiant Tuya."
+          },
+          "required": true
+        },
+        {
+          "key": "ip",
+          "type": "string",
+          "label": {
+            "en": "Device IP address",
+            "fr": "Adresse IP de l'appareil"
+          },
+          "required": true
+        }
+      ]
+    },
+    {
+      "key": "disconnect",
+      "label": {
+        "en": "Disconnect from the Tuya cloud",
+        "fr": "Se déconnecter du cloud Tuya"
+      },
+      "description": {
+        "en": "Stop talking to the Tuya cloud (local sessions are released too). Save the configuration to reconnect.",
+        "fr": "Coupe la connexion au cloud Tuya (les sessions locales sont aussi libérées). Enregistrez la configuration pour vous reconnecter."
+      },
+      "timeout_seconds": 30,
+      "fields": []
+    }
+  ],
+  "config_schema": [
+    {
+      "key": "cloud_intro",
+      "type": "section",
+      "label": {
+        "en": "Getting started",
+        "fr": "Pour commencer"
+      },
+      "description": {
+        "en": "This integration talks to your devices through a Tuya IoT Cloud project. Create one (free) on the Tuya IoT Platform, subscribe the \"IoT Core\" service, link your Smart Life / Tuya app account, then copy the four values below. The full step-by-step is in the Documentation link above.",
+        "fr": "Cette intégration communique avec vos appareils via un projet Tuya IoT Cloud. Créez-en un (gratuit) sur la Tuya IoT Platform, souscrivez au service \"IoT Core\", liez votre compte de l'application Smart Life / Tuya, puis reportez les quatre valeurs ci-dessous. Le pas à pas complet est dans le lien Documentation ci-dessus."
+      },
+      "links": [
+        {
+          "url": "https://iot.tuya.com/",
+          "label": {
+            "en": "Tuya IoT Platform",
+            "fr": "Tuya IoT Platform"
+          }
+        }
+      ]
+    },
+    {
+      "key": "endpoint",
+      "type": "select",
+      "label": {
+        "en": "Endpoint",
+        "fr": "Endpoint"
+      },
+      "description": {
+        "en": "Tuya data center region of your cloud project.",
+        "fr": "Région du data center Tuya de votre projet cloud."
+      },
+      "required": true,
+      "options": [
+        {
+          "value": "china",
+          "label": {
+            "en": "China",
+            "fr": "China"
+          }
+        },
+        {
+          "value": "westernAmerica",
+          "label": {
+            "en": "Western America",
+            "fr": "Western America"
+          }
+        },
+        {
+          "value": "easternAmerica",
+          "label": {
+            "en": "Eastern America",
+            "fr": "Eastern America"
+          }
+        },
+        {
+          "value": "centralEurope",
+          "label": {
+            "en": "Central Europe",
+            "fr": "Central Europe"
+          }
+        },
+        {
+          "value": "westernEurope",
+          "label": {
+            "en": "Western Europe",
+            "fr": "Western Europe"
+          }
+        },
+        {
+          "value": "india",
+          "label": {
+            "en": "India",
+            "fr": "India"
+          }
+        }
+      ]
+    },
+    {
+      "key": "access_key",
+      "type": "string",
+      "label": {
+        "en": "Client ID",
+        "fr": "Client ID"
+      },
+      "description": {
+        "en": "Access ID / Client ID of your Tuya IoT cloud project.",
+        "fr": "Access ID / Client ID de votre projet cloud Tuya IoT."
+      },
+      "required": true
+    },
+    {
+      "key": "secret_key",
+      "type": "secret",
+      "label": {
+        "en": "Client Secret",
+        "fr": "Client Secret"
+      },
+      "description": {
+        "en": "Access Secret / Client Secret of your Tuya IoT cloud project.",
+        "fr": "Access Secret / Client Secret de votre projet cloud Tuya IoT."
+      },
+      "required": true
+    },
+    {
+      "key": "app_account_id",
+      "type": "string",
+      "label": {
+        "en": "App account UID",
+        "fr": "App account User ID"
+      },
+      "description": {
+        "en": "UID of the Smart Life / Tuya app account linked to your cloud project.",
+        "fr": "UID du compte de l'application Smart Life / Tuya lié à votre projet cloud."
+      },
+      "required": true
+    },
+    {
+      "key": "pulsar_intro",
+      "type": "section",
+      "label": {
+        "en": "Real-time cloud events (optional)",
+        "fr": "Événements cloud en temps réel (optionnel)"
+      },
+      "description": {
+        "en": "For devices used over the cloud, Gladys can receive their state changes instantly instead of waiting for the next poll. This needs the \"Message Service\" subscribed on your Tuya IoT project, then the toggle below turned on. Devices already controlled locally already get instant feedback and do not need this.",
+        "fr": "Pour les appareils utilisés via le cloud, Gladys peut recevoir leurs changements d'état instantanément au lieu d'attendre le prochain relevé. Cela nécessite d'avoir souscrit au \"Message Service\" sur votre projet Tuya IoT, puis d'activer l'option ci-dessous. Les appareils déjà pilotés en local ont déjà un retour instantané et n'en ont pas besoin."
+      },
+      "links": [
+        {
+          "url": "https://iot.tuya.com/",
+          "label": {
+            "en": "Tuya IoT Platform",
+            "fr": "Tuya IoT Platform"
+          }
+        }
+      ]
+    },
+    {
+      "key": "pulsar_enabled",
+      "type": "boolean",
+      "label": {
+        "en": "Real-time cloud events (Pulsar)",
+        "fr": "Événements cloud en temps réel (Pulsar)"
+      },
+      "description": {
+        "en": "Instant cloud state feedback via the Tuya Message Service. Requires 'Message Service' enabled on your Tuya IoT project.",
+        "fr": "Retour d'état cloud instantané via le Tuya Message Service. Nécessite 'Message Service' activé sur votre projet Tuya IoT."
+      },
+      "required": false
+    }
+  ]
+}

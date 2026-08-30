@@ -1,0 +1,34 @@
+{
+  "name": "gladys-tuya",
+  "version": "1.12.0",
+  "private": true,
+  "description": "Tuya external integration for Gladys Assistant (smart sockets and smart meters, cloud + local modes).",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@demirdeniz/tuyapi-newgen": "^8.1.5",
+    "@gladysassistant/integration-sdk": "^0.10.0",
+    "@tuya/tuya-connector-nodejs": "^2.1.2",
+    "jpeg-js": "^0.4.4",
+    "tuyapi": "^7.7.1",
+    "ws": "^8.21.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.7.0",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^17.7.0",
+    "prettier": "^3.9.5"
+  },
+  "license": "Apache-2.0"
+}
