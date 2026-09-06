@@ -1,0 +1,111 @@
+# Intégration Tuya pour Gladys Assistant
+
+Pilotez vos appareils Tuya / Smart Life depuis Gladys, via le **cloud** et, quand c'est possible, directement sur votre **réseau local (LAN)** pour un fonctionnement plus rapide et indépendant d'internet.
+
+## Appareils pris en charge
+
+- **Prises connectées** (dont la prise LSC FR avec mesure de conso) : marche/arrêt, verrou enfant, puissance, tension, courant, énergie.
+- **Compteurs d'énergie** (dont triphasé) : puissance, tension, courant, énergie importée/exportée.
+- **Climatiseurs** : marche/arrêt, mode (auto / froid / chaud / déshu / ventilation), consigne, température ambiante, vitesse de ventilation et les deux axes d'oscillation.
+- **Thermostats fil pilote** (gamme RP5, Konyks eCosy) : mode de chauffe, consigne, température ambiante, verrou enfant, énergie.
+- **Caméras** (dont LSC) : mode privé, détection de mouvement, sirène, suivi de mouvement, filtre humain, enregistrement, retournement d'image, et un capteur de mouvement utilisable dans vos scènes.
+- **Sonnettes vidéo** : sonnerie (fonctionnalité sonnette dédiée), photo du visiteur, détection de mouvement, enregistrement, voyant d'état.
+- **Distributeurs de croquettes** : distribution à la demande, dernière quantité distribuée, distribution lente, batterie.
+- **Interrupteurs, lumières et volets** via les correspondances génériques.
+
+> Les caméras et sonnettes exposent leurs photos, pas un flux vidéo en direct : Tuya ne publie aucun point d'accès RTSP/ONVIF local stable.
+>
+> La sonnerie des sonnettes et la ventilation / les oscillations des climatiseurs nécessitent **Gladys 4.84.2 ou plus récent**. Sur un Gladys plus ancien, l'intégration continue de fonctionner, sans ces fonctionnalités.
+
+Chaque appareil affiche un macaron **Local** ou **Cloud** pour savoir comment il communique.
+
+---
+
+## 1. Créer un projet Tuya IoT Cloud
+
+L'intégration a besoin d'un projet Tuya IoT Cloud (gratuit) pour atteindre vos appareils.
+
+1. Rendez-vous sur la [Tuya IoT Platform](https://iot.tuya.com/) et connectez-vous (créez un compte si besoin).
+2. Ouvrez **Cloud → Development** et cliquez sur **Create Cloud Project**.
+   - Donnez-lui le nom que vous voulez.
+   - **Industry / Development method** : laissez les valeurs par défaut (Smart Home).
+   - **Data Center** : choisissez la région la plus proche (ex. _Central Europe_ pour la France). **Retenez ce choix** — vous choisirez la même région dans Gladys.
+3. Une fois le projet créé, ouvrez-le. Dans l'onglet **Overview**, notez l'**Access ID / Client ID** et l'**Access Secret / Client Secret**.
+4. Ouvrez l'onglet **Service API** et vérifiez que **IoT Core** est autorisé (souscrivez-y sinon — c'est gratuit).
+
+> ⚠️ **L'essai IoT Core expire.** Tuya offre ce service en essai gratuit (un mois, prolongeable ensuite de six mois sans frais). Une fois expiré, Tuya rejette **tous** les appels API de votre projet et l'ensemble de vos appareils décroche dans Gladys, avec le message _« IoT Core service subscription has expired »_.
+>
+> Pour le prolonger : **Cloud → Development → votre projet → Service API** (ou **Cloud → Cloud Services → IoT Core**), puis **Extend Trial Period**. C'est gratuit et effectif immédiatement. Pensez à mettre un rappel — c'est à refaire tous les six mois.
+
+## 2. Lier votre compte de l'application Smart Life / Tuya
+
+Vos appareils doivent appartenir à un compte de l'app Tuya que le projet peut voir.
+
+1. Dans le projet, ouvrez **Devices → Link Tuya App Account → Add App Account**.
+2. Scannez le QR code avec votre application **Smart Life** ou **Tuya Smart** (Moi → icône de scan en haut à droite).
+3. De retour sur la plateforme, ouvrez **Devices → Link Tuya App Account** : vos appareils apparaissent.
+4. Notez votre **App account UID** (affiché à côté du compte lié).
+
+## 3. Renseigner la configuration dans Gladys
+
+Dans l'écran de configuration de l'intégration, renseignez :
+
+| Champ               | Où le trouver                                         |
+| ------------------- | ----------------------------------------------------- |
+| **Endpoint**        | La région (Data Center) choisie à l'étape 1           |
+| **Client ID**       | Overview du projet → Access ID / Client ID            |
+| **Client Secret**   | Overview du projet → Access Secret / Client Secret    |
+| **App account UID** | Devices → Link Tuya App Account → l'UID du compte lié |
+
+Enregistrez. Le statut **Connexion** en bas de l'écran doit passer à **Connecté**. En cas d'erreur, le message vous indique quoi corriger (identifiants incorrects, mauvaise région…).
+
+## 4. Découvrir vos appareils
+
+Ouvrez l'onglet **Découverte**, laissez Gladys lister vos appareils Tuya, puis créez ceux que vous voulez. Chaque appareil apparaît avec ses fonctionnalités et un macaron Local/Cloud.
+
+---
+
+## Mode local (LAN)
+
+Le contrôle local est plus rapide et continue de fonctionner sans internet. Il est activé par le bouton **« Préférer la connexion locale »** (activé par défaut).
+
+- Quand il est activé, Gladys essaie d'atteindre chaque appareil sur votre réseau ; si elle y parvient, l'appareil affiche un macaron **Local** et son état se met à jour **instantanément**. Sinon, l'appareil bascule automatiquement sur le **Cloud**.
+- Le contrôle local nécessite que Gladys connaisse l'adresse IP et le protocole de chaque appareil. La plupart sont trouvés automatiquement par le scan réseau lors de la découverte.
+- Un appareil qui _pourrait_ fonctionner en local (son IP est connue et la préférence activée) mais qui tourne actuellement via le cloud garde un macaron **Cloud** avec un **point orange** — survolez-le pour savoir pourquoi (appareil basculé après des échecs, info réseau incomplète…). Un vrai appareil cloud-only garde un macaron Cloud bleu simple.
+
+### Un appareil reste en Cloud alors qu'il est sur votre réseau
+
+Certains appareils ne sont pas trouvés par le scan automatique (sous-réseau différent, en veille pendant le scan…). Vous pouvez les ajouter à la main :
+
+1. Ouvrez l'écran **Configuration** → action **Détecter le protocole local (IP manuelle)**.
+2. Saisissez l'appareil (son nom dans Gladys ou son identifiant Tuya) et son **adresse IP**.
+3. Exécutez. En cas de succès, l'appareil passe en local au cycle suivant.
+
+> Astuce : attribuez une IP fixe (réservation DHCP) à vos appareils Tuya sur votre box pour qu'ils restent joignables.
+
+---
+
+## Événements cloud en temps réel (Pulsar) — optionnel
+
+Pour les appareils utilisés **via le cloud**, Gladys peut recevoir leurs changements d'état **instantanément** (en ~1–2 s) au lieu d'attendre le prochain relevé. Cela utilise le **Message Service** de Tuya (aussi appelé Pulsar). Les appareils déjà pilotés en local ont déjà un retour instantané et n'en ont pas besoin.
+
+Deux étapes pour l'activer :
+
+1. **Sur la Tuya IoT Platform** : ouvrez votre projet → **Service API** → souscrivez au **Message Service** (gratuit). Sans cela, la connexion est refusée et Gladys écrit un message explicite dans les journaux.
+2. **Dans Gladys** : activez le bouton **« Événements cloud en temps réel (Pulsar) »** dans la configuration, puis enregistrez.
+
+> Un appareil ne remonte via Pulsar que ce qu'il envoie réellement au cloud Tuya : certains remontent tout leur état, d'autres seulement une partie (ex. marche/arrêt), d'autres rien — ceux-là conservent simplement le rafraîchissement cloud classique. C'est un comportement de l'appareil/firmware, pas une limite de Gladys.
+
+---
+
+## Actions utiles
+
+- **Détecter le protocole local (IP manuelle)** : active le mode local pour un appareil que le scan n'a pas trouvé (voir ci-dessus).
+- **Se déconnecter du cloud Tuya** : coupe la connexion au cloud jusqu'au prochain enregistrement de la configuration.
+
+## Dépannage
+
+- **La connexion affiche une erreur** → vérifiez les quatre identifiants et que l'**Endpoint** correspond bien au Data Center de votre projet.
+- **Un appareil n'a pas d'état / ne se pilote pas** → regardez son macaron. En Cloud sans rien qui remonte, l'appareil est peut-être hors ligne dans l'app Tuya.
+- **Les événements cloud en temps réel ne démarrent pas** → vérifiez que le **Message Service** est bien souscrit sur votre projet Tuya (un 401 dans les journaux signifie que non).
+- **Les journaux** sont disponibles dans l'onglet **Journaux** de l'intégration.

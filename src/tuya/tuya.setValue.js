@@ -1,0 +1,231 @@
+// Ported from server/services/tuya/lib/tuya.setValue.js.
+//
+// The local (LAN) path is tried first when the device opted in through
+// LOCAL_OVERRIDE and its local parameters are complete; the cloud command is
+// the fallback, as in the core service.
+
+import { createLogger } from '@gladysassistant/integration-sdk';
+
+import { API, DEVICE_PARAM_NAME } from './constants.js';
+import { writeValues } from './device/tuya.deviceMapping.js';
+import { getTuyaDeviceId, getFeatureCode } from './utils/tuya.externalId.js';
+import { getParamValue } from './utils/tuya.deviceParams.js';
+import { getLocalDpsFromCode } from './device/tuya.localMapping.js';
+import { localApiClasses } from './local/tuya.localPoll.js';
+import { isLocalInCooldown } from './local/tuya.localCircuit.js';
+import { formatSocketError } from './local/tuya.socketError.js';
+import { withTimeout, forceCloseApi } from './local/tuya.localSession.js';
+import { getFeatureWithFallbackScale, resolveFeatureMappingEntry } from './tuya.poll.js';
+
+const logger = createLogger({ name: 'tuya' });
+
+const FEEDBACK_POLL_DELAY_MS = 1000;
+
+// After a successful command, re-read the device shortly after so Gladys
+// shows the confirmed state (has_feedback), as the core PR8 does. The poll is
+// fire-and-forget: a command must not block on it, and the timer is unref'd
+// so it never keeps the process alive.
+const scheduleFeedbackPoll = (self, device, reason) => {
+  if (!self || typeof self.poll !== 'function' || !device || !device.external_id) {
+    return;
+  }
+  const delayMs = Number.isFinite(self.feedbackPollDelayMs)
+    ? self.feedbackPollDelayMs
+    : FEEDBACK_POLL_DELAY_MS;
+  const timer = setTimeout(() => {
+    self.poll(device).catch((e) => {
+      logger.debug(`[Tuya][setValue] feedback poll failed after ${reason}`, e);
+    });
+  }, delayMs);
+  if (typeof timer.unref === 'function') {
+    timer.unref();
+  }
+};
+
+/**
+ * @description Send the new device value over device protocol.
+ * @param {object} device - Updated Gladys device.
+ * @param {object} deviceFeature - Updated Gladys device feature.
+ * @param {string|number} value - The new device feature value.
+ * @example
+ * await handler.setValue(device, deviceFeature, 0);
+ */
+export async function setValue(device, deviceFeature, value) {
+  const externalId = deviceFeature.external_id;
+  const topic = getTuyaDeviceId(device);
+  const command = getFeatureCode(deviceFeature);
+
+  if (!command || command.trim().length === 0) {
+    throw new Error(`Tuya device external_id is invalid: "${externalId}" have no command`);
+  }
+
+  // PATCH (local fork, not upstream): synthetic "Mode nuit (Sleep)" switch —
+  // see convertDevice.js. It shares the real "mode" DP but is not a real
+  // Tuya switch: bypass the category/type writeFn dispatch (shared with the
+  // real on/off switch and the swing toggle) and translate the boolean
+  // directly to the mode enum string this device expects. Off falls back to
+  // COOL rather than doing nothing, matching how the physical unit is used
+  // day-to-day.
+  const isSleepToggle = command === 'sleep_toggle';
+  const rawValueToSend = isSleepToggle ? (value === 1 || value === true ? 'SLEEP' : 'COOL') : null;
+
+  const writeCategory = writeValues[deviceFeature.category];
+  const writeFn = writeCategory ? writeCategory[deviceFeature.type] : null;
+  // The feature is passed along for scale-aware transforms (e.g. an AC target
+  // temperature with scale 1 stores 20.0 degrees as 200). Gladys does not
+  // persist the scale, so restore it from the device-type mapping first. The
+  // mapping entry gives the writer per-variant metadata (e.g. the tuyaEnum
+  // pilot-wire vocabulary).
+  const featureWithScale = getFeatureWithFallbackScale(device, deviceFeature, command);
+  const mappingEntry = resolveFeatureMappingEntry(device, command);
+  const transformedValue = isSleepToggle
+    ? rawValueToSend
+    : writeFn
+      ? writeFn(value, featureWithScale, mappingEntry)
+      : value;
+  if (!isSleepToggle && writeFn && transformedValue === undefined) {
+    // e.g. a pilot-wire mode the device vocabulary does not support (OFF on a
+    // device whose on/off is a separate switch DPS): reject instead of
+    // sending garbage to the device.
+    throw new Error(
+      `Tuya: value "${value}" is not supported for command "${command}" on device "${topic}"`,
+    );
+  }
+  logger.debug(`Change value for devices ${topic}/${command} to value ${transformedValue}...`);
+
+  const params = device.params || [];
+  const ipAddress = getParamValue(params, DEVICE_PARAM_NAME.IP_ADDRESS);
+  const localKey = getParamValue(params, DEVICE_PARAM_NAME.LOCAL_KEY);
+  const protocolVersionRaw = getParamValue(params, DEVICE_PARAM_NAME.PROTOCOL_VERSION);
+  const protocolVersion =
+    protocolVersionRaw !== null && protocolVersionRaw !== undefined
+      ? String(protocolVersionRaw).trim()
+      : undefined;
+  // Follow the same live "Mode local (LAN)" toggle as poll(): command a device
+  // over the LAN only when the toggle is on AND the device is locally reachable.
+  // Also honour the poll circuit breaker: if local polling parked this device
+  // (repeated timeouts), send the command straight over the cloud instead of
+  // hanging on a doomed 3s local connect.
+  const localModeEnabled = Boolean(this.config && this.config.localMode === true);
+  const localParked = this.localCircuit && isLocalInCooldown(this.localCircuit, topic, Date.now());
+  const hasLocalConfig = Boolean(
+    ipAddress && localKey && protocolVersion && localModeEnabled && !localParked,
+  );
+
+  const localDps = getLocalDpsFromCode(command, device);
+
+  // A Tuya device accepts a SINGLE local session. When our persistent session
+  // (issue #9) exists — live OR mid-reconnect — the command MUST go through
+  // it: a parallel one-shot connect would fight our own socket. On any
+  // session failure the command falls through to the shared cloud block.
+  const hasSession = Boolean(
+    this.localSessions &&
+    this.localSessions.has(topic) &&
+    typeof this.localSessionSet === 'function',
+  );
+  if (hasLocalConfig && localDps !== null && hasSession) {
+    try {
+      if (typeof this.ensureLocalSession === 'function') {
+        // (Re)join the session first: a session that is reconnecting must not
+        // be raced with a competing connect (single local slot).
+        await this.ensureLocalSession({
+          deviceId: topic,
+          ip: ipAddress,
+          localKey,
+          protocolVersion,
+        });
+      }
+      const done = await this.localSessionSet(topic, localDps, transformedValue);
+      if (done) {
+        // No feedback poll here: the persistent session pushes the DPS
+        // change (~1s) on its own.
+        return;
+      }
+    } catch (e) {
+      logger.info(
+        `[Tuya][setValue] session command failed for device=${topic} (${e.message}); falling back to cloud`,
+      );
+    }
+  } else if (hasLocalConfig && localDps !== null) {
+    const isProtocol34 = protocolVersion === '3.4';
+    const isProtocol35 = protocolVersion === '3.5';
+    const isNewGenProtocol = isProtocol34 || isProtocol35;
+    const apiClasses = this.localApiClasses || localApiClasses;
+    const TuyaLocalApi = isNewGenProtocol ? apiClasses.TuyAPINewGen : apiClasses.TuyAPI;
+    const tuyaOptions = {
+      id: topic,
+      key: localKey,
+      ip: ipAddress,
+      version: protocolVersion,
+      issueGetOnConnect: false,
+      issueRefreshOnConnect: false,
+      issueRefreshOnPing: false,
+    };
+    if (isProtocol35) {
+      tuyaOptions.keepAlive = false;
+    }
+    const runLocalSet = async () => {
+      const tuyaLocal = new TuyaLocalApi(tuyaOptions);
+      // Absorb async socket errors so they do not bubble up as uncaughtException
+      // when the device drops the connection mid-command. The stub-friendly
+      // guard keeps tests working when their TuyAPI stub does not implement on().
+      if (typeof tuyaLocal.on === 'function') {
+        tuyaLocal.on('error', (err) => {
+          logger.info(
+            `[Tuya][setValue][local] socket error for device=${topic}: ${formatSocketError(err, ipAddress)}`,
+          );
+        });
+      }
+      try {
+        // Bound both steps: a stalled handshake (device slot held by another
+        // controller) must fall back to the cloud, not hang the command.
+        await withTimeout(tuyaLocal.connect(), 5000, 'Local set connect timeout');
+        await withTimeout(
+          tuyaLocal.set({ dps: localDps, set: transformedValue }),
+          3000,
+          'Local set timeout',
+        );
+        logger.debug(
+          `[Tuya][setValue][local] device=${topic} dps=${localDps} value=${transformedValue}`,
+        );
+        return true;
+      } catch (e) {
+        logger.warn(`[Tuya][setValue][local] failed, fallback to cloud`, e);
+        return false;
+      } finally {
+        // Always close the socket for real — even when connect() stalled (a
+        // plain disconnect() no-ops while a connect is pending) — so the
+        // device does not refuse subsequent local connections.
+        await forceCloseApi(tuyaLocal);
+      }
+    };
+
+    const localSuccess = await runLocalSet();
+    if (localSuccess) {
+      scheduleFeedbackPoll(this, device, 'local command');
+      return;
+    }
+  }
+
+  if (!this.connector || typeof this.connector.request !== 'function') {
+    logger.warn(
+      `[Tuya][setValue][cloud] connector unavailable for device=${topic} (cloud disconnected); local set did not succeed and no fallback is possible`,
+    );
+    return;
+  }
+
+  const response = await this.connector.request({
+    method: 'POST',
+    path: `${API.VERSION_1_0}/devices/${topic}/commands`,
+    body: {
+      commands: [
+        {
+          code: command,
+          value: transformedValue,
+        },
+      ],
+    },
+  });
+  logger.debug(`[Tuya][setValue] ${JSON.stringify(response)}`);
+  scheduleFeedbackPoll(this, device, 'cloud command');
+}
